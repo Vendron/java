@@ -1,6 +1,13 @@
 /*
 arithmatic expressions assignment
 taking arithmetic expressions and simplifying them.
+TODO:
+Use StringBuilder rather toString() for prettyPrint() method- this can be done by using the append() method to add to the string
+Program has to look through the string and understand it, then simplify it. By taking apart the string and finding what is a double, variable, or operator. e.g. 2x + 3y(2x + 3y) = 2x^2 + 3y^2 + 6xy + 9xy
+Simplify expressions such as x + x to 2x and x * x to x^2
+Account for expressions such as x + x + x to 3x and x * x * x to x^3
+This should be able to account for more complex expressions such as sin(x) + cos(x) or x^2 + 2x + 1 
+To account for this it should use multiple subclasses to simplify the expressions.
 */
 
 public class Arithmetic {
@@ -9,17 +16,19 @@ public class Arithmetic {
      */
     abstract class ArithmeticExpression {
 
-        public abstract String prettyPrint();
+        public abstract StringBuilder prettyPrint();
 
         public abstract ArithmeticExpression simplify();
     }
 
     // Factory for creating arithmetic expressions
-    interface ExpressionFactory {
+    static interface ExpressionFactory {
+        // Create variables and constants
         ArithmeticExpression createVariable(String name);
 
         ArithmeticExpression createConstant(double value);
 
+        // Create arithmetic expressions
         ArithmeticExpression createAddition(ArithmeticExpression left, ArithmeticExpression right);
 
         ArithmeticExpression createMultiplication(ArithmeticExpression left, ArithmeticExpression right);
@@ -30,7 +39,8 @@ public class Arithmetic {
 
     }
 
-    // Factory for creating arithmetic expressions
+    // MEF implements ExpressionFactory to create arithmetic expressions that can be
+    // simplified
     class MinimalExpressionFactory implements ExpressionFactory {
         public ArithmeticExpression createVariable(String name) {
             return new Variable(name);
@@ -65,8 +75,9 @@ public class Arithmetic {
             this.name = name;
         }
 
-        public String prettyPrint() {
-            return name;
+        @Override
+        public StringBuilder prettyPrint() {
+            return new StringBuilder(name);
         }
 
         public ArithmeticExpression simplify() {
@@ -82,8 +93,9 @@ public class Arithmetic {
             this.value = value;
         }
 
-        public String prettyPrint() {
-            return Double.toString(value);
+        @Override
+        public StringBuilder prettyPrint() {
+            return new StringBuilder(String.valueOf(value));
         }
 
         public ArithmeticExpression simplify() {
@@ -105,23 +117,59 @@ public class Arithmetic {
             this.right = right;
         }
 
-        public String prettyPrint() {
-            return left.prettyPrint() + " + " + right.prettyPrint();
+        @Override
+        public StringBuilder prettyPrint() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(left.prettyPrint()).append(" + ").append(right.prettyPrint());
+            return sb;
         }
 
         public ArithmeticExpression simplify() {
             ArithmeticExpression simplifiedLeft = left.simplify();
             ArithmeticExpression simplifiedRight = right.simplify();
 
+            if (simplifiedLeft instanceof Multiplication && simplifiedRight instanceof Multiplication) {
+                Multiplication leftMul = (Multiplication) simplifiedLeft;
+                Multiplication rightMul = (Multiplication) simplifiedRight;
+
+                if (leftMul.left instanceof Constant && rightMul.left instanceof Constant &&
+                        leftMul.right.prettyPrint().equals(rightMul.right.prettyPrint())) {
+                    double newCoefficient = ((Constant) leftMul.left).getValue()
+                            + ((Constant) rightMul.left).getValue();
+                    return new Multiplication(new Constant(newCoefficient), leftMul.right).simplify();
+                }
+            }
+
+            // If the left and right are both constants, add them together
+            if (simplifiedLeft instanceof Constant && simplifiedRight instanceof Constant) {
+                return new Constant(((Constant) simplifiedLeft).getValue() + ((Constant) simplifiedRight).getValue());
+            }
+
+            // If left and right are both variables, add them together e.g. x + x = 2x or 7y
+            // + 9y = 16y
+            if (simplifiedLeft instanceof Variable && simplifiedRight instanceof Variable) {
+                // check if there are any constants in the expression, if so add them together
+
+                // check if the variables are the same
+                if (simplifiedLeft.prettyPrint().equals(simplifiedRight.prettyPrint())) {
+                    return new Multiplication(new Constant(2.0), simplifiedLeft);
+                }
+            }
+
+            if (simplifiedLeft.prettyPrint().equals(simplifiedRight.prettyPrint())) {
+                return new Multiplication(new Constant(2.0), simplifiedLeft);
+            }
+
             if (simplifiedLeft instanceof Constant && ((Constant) simplifiedLeft).getValue() == 0.0) {
                 return simplifiedRight;
             }
+
             if (simplifiedRight instanceof Constant && ((Constant) simplifiedRight).getValue() == 0.0) {
                 return simplifiedLeft;
             }
+
             return new Addition(simplifiedLeft, simplifiedRight); // Return addition if no simplification is possible
         }
-
     }
 
     class Multiplication extends ArithmeticExpression {
@@ -132,32 +180,43 @@ public class Arithmetic {
             this.right = right;
         }
 
-        public String prettyPrint() {
-            return left.prettyPrint() + " * " + right.prettyPrint();
+        @Override
+        public StringBuilder prettyPrint() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(left.prettyPrint()).append(" * ").append(right.prettyPrint());
+            return sb;
         }
 
         public ArithmeticExpression simplify() {
             ArithmeticExpression simplifiedLeft = left.simplify();
             ArithmeticExpression simplifiedRight = right.simplify();
 
-            if (simplifiedLeft instanceof Constant) {
-                double leftValue = ((Constant) simplifiedLeft).getValue();
-                if (leftValue == 0.0)
-                    return new Constant(0.0);
-                if (leftValue == 1.0)
-                    return simplifiedRight;
+            // If both operands are Variables and are the same, e.g. x*x
+            if (simplifiedLeft instanceof Variable && simplifiedRight instanceof Variable) {
+                if (simplifiedLeft.prettyPrint().toString().equals(simplifiedRight.prettyPrint().toString())) {
+                    return new Exponentiation(simplifiedLeft, new Constant(2.0)).simplify();
+                }
             }
 
-            if (simplifiedRight instanceof Constant) {
-                double rightValue = ((Constant) simplifiedRight).getValue();
-                if (rightValue == 0.0)
-                    return new Constant(0.0);
-                if (rightValue == 1.0)
-                    return simplifiedLeft;
+            // If both operands are Constants, e.g. 5*2
+            if (simplifiedLeft instanceof Constant && simplifiedRight instanceof Constant) {
+                double resultValue = ((Constant) simplifiedLeft).getValue() * ((Constant) simplifiedRight).getValue();
+                return new Constant(resultValue);
             }
 
-            return new Multiplication(simplifiedLeft, simplifiedRight); // Return multiplication if no simplification is
-                                                                        // possible
+            // If one operand is a Constant and the other is a Variable, e.g. 3*2x
+            if (simplifiedLeft instanceof Constant && simplifiedRight instanceof Variable) {
+                double coefficient = ((Constant) simplifiedLeft).getValue();
+                return new Multiplication(new Constant(coefficient), simplifiedRight);
+            }
+
+            if (simplifiedRight instanceof Constant && simplifiedLeft instanceof Variable) {
+                double coefficient = ((Constant) simplifiedRight).getValue();
+                return new Multiplication(simplifiedLeft, new Constant(coefficient));
+            }
+
+            // Return multiplication if no further simplification is possible
+            return new Multiplication(simplifiedLeft, simplifiedRight);
         }
 
     }
@@ -172,8 +231,11 @@ public class Arithmetic {
             this.denominator = denominator;
         }
 
-        public String prettyPrint() {
-            return numerator.prettyPrint() + " / " + denominator.prettyPrint();
+        @Override
+        public StringBuilder prettyPrint() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(numerator.prettyPrint()).append(" / ").append(denominator.prettyPrint());
+            return sb;
         }
 
         public ArithmeticExpression simplify() {
@@ -213,15 +275,18 @@ public class Arithmetic {
             this.exponent = exponent;
         }
 
-        public String prettyPrint() {
-            return base.prettyPrint() + "^" + exponent.prettyPrint();
+        @Override
+        public StringBuilder prettyPrint() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(base.prettyPrint()).append(" ^ ").append(exponent.prettyPrint());
+            return sb;
         }
 
         public ArithmeticExpression simplify() {
             ArithmeticExpression simplifiedBase = base.simplify();
             ArithmeticExpression simplifiedExponent = exponent.simplify();
 
-            // If the base is 1 or the exponent is 0, return 1.
+            // Base is 1 or Exponent is 0
             if (simplifiedBase instanceof Constant && ((Constant) simplifiedBase).getValue() == 1.0) {
                 return new Constant(1.0);
             }
@@ -229,22 +294,90 @@ public class Arithmetic {
                 return new Constant(1.0);
             }
 
-            // If the base is 0, return 0.
+            // Base is 0
             if (simplifiedBase instanceof Constant && ((Constant) simplifiedBase).getValue() == 0.0) {
-                return new Constant(0.0);
+                if (simplifiedExponent instanceof Constant && ((Constant) simplifiedExponent).getValue() > 0) {
+                    return new Constant(0.0);
+                } else if (simplifiedExponent instanceof Constant && ((Constant) simplifiedExponent).getValue() < 0) {
+                    throw new ArithmeticException("0 raised to a negative power is undefined.");
+                }
             }
 
-            // If the exponent is 1, return the base.
+            // Exponent is 1
             if (simplifiedExponent instanceof Constant && ((Constant) simplifiedExponent).getValue() == 1.0) {
                 return simplifiedBase;
             }
 
-            return new Exponentiation(simplifiedBase, simplifiedExponent); // Return exponentiation if no simplification
-                                                                           // is possible
+            // Return exponentiation if no further simplification is possible
+            return new Exponentiation(simplifiedBase, simplifiedExponent);
         }
+
     }
 
     public static void main(String[] args) {
-        System.out.println("Hello World!");
+        Arithmetic arithmeticInstance = new Arithmetic();
+        MinimalExpressionFactory factory = arithmeticInstance.new MinimalExpressionFactory();
+
+        double[] numbers = { 0.0, 1.0, 5.0, 10.0 };
+        String[] variables = { "x", "y", "z" };
+
+        // Testing variable with number
+        for (String var : variables) {
+            ArithmeticExpression variable = factory.createVariable(var);
+            for (double num : numbers) {
+                ArithmeticExpression constant = factory.createConstant(num);
+                testExpressions(factory, variable, constant);
+            }
+        }
+
+        // Testing variable with variable
+        for (String var1 : variables) {
+            ArithmeticExpression variable1 = factory.createVariable(var1);
+            for (String var2 : variables) {
+                ArithmeticExpression variable2 = factory.createVariable(var2);
+                testExpressions(factory, variable1, variable2);
+            }
+        }
+
+        // Testing number with number
+        for (double num1 : numbers) {
+            ArithmeticExpression constant1 = factory.createConstant(num1);
+            for (double num2 : numbers) {
+                ArithmeticExpression constant2 = factory.createConstant(num2);
+                testExpressions(factory, constant1, constant2);
+            }
+        }
     }
+
+    public static void testExpressions(MinimalExpressionFactory factory, ArithmeticExpression expr1,
+            ArithmeticExpression expr2) {
+        // Test Addition
+        ArithmeticExpression addition = factory.createAddition(expr1, expr2);
+        System.out.println(
+                expr1.prettyPrint() + " + " + expr2.prettyPrint() + ": " + addition.prettyPrint() + " => Simplified: "
+                        + addition.simplify().prettyPrint());
+
+        // Test Multiplication
+        ArithmeticExpression multiplication = factory.createMultiplication(expr1, expr2);
+        System.out.println(expr1.prettyPrint() + " * " + expr2.prettyPrint() + ": " + multiplication.prettyPrint()
+                + " => Simplified: "
+                + multiplication.simplify().prettyPrint());
+
+        // Test Division (avoid division by zero)
+        if (!(expr2 instanceof Constant && ((Constant) expr2).getValue() == 0.0)) {
+            ArithmeticExpression division = factory.createDivision(expr1, expr2);
+            System.out.println(expr1.prettyPrint() + " / " + expr2.prettyPrint() + ": " + division.prettyPrint()
+                    + " => Simplified: "
+                    + division.simplify().prettyPrint());
+        }
+
+        // Test Exponentiation
+        ArithmeticExpression exponentiation = factory.createExponentiation(expr1, expr2);
+        System.out.println(expr1.prettyPrint() + " ^ " + expr2.prettyPrint() + ": " + exponentiation.prettyPrint()
+                + " => Simplified: "
+                + exponentiation.simplify().prettyPrint());
+
+        System.out.println("////");
+    }
+
 }
