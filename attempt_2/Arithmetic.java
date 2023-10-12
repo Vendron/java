@@ -11,36 +11,26 @@ To account for this it should use multiple subclasses to simplify the expression
 */
 
 public class Arithmetic {
-    /*
-     * Base class for all arithmetic expressions
-     */
+
+    // Base class for all arithmetic expressions
     abstract class ArithmeticExpression {
-
         public abstract StringBuilder prettyPrint();
-
         public abstract ArithmeticExpression simplify();
     }
 
-    // Factory for creating arithmetic expressions
+    // Factory interface for creating arithmetic expressions
     static interface ExpressionFactory {
-        // Create variables and constants
         ArithmeticExpression createVariable(String name);
-
         ArithmeticExpression createConstant(double value);
 
-        // Create arithmetic expressions
         ArithmeticExpression createAddition(ArithmeticExpression left, ArithmeticExpression right);
-
         ArithmeticExpression createMultiplication(ArithmeticExpression left, ArithmeticExpression right);
-
         ArithmeticExpression createDivision(ArithmeticExpression numerator, ArithmeticExpression denominator);
-
         ArithmeticExpression createExponentiation(ArithmeticExpression base, ArithmeticExpression exponent);
 
     }
 
-    // MEF implements ExpressionFactory to create arithmetic expressions that can be
-    // simplified
+    // MEF implements ExpressionFactory to create arithmetic expressions that can be simplified
     class MinimalExpressionFactory implements ExpressionFactory {
         public ArithmeticExpression createVariable(String name) {
             return new Variable(name);
@@ -67,7 +57,7 @@ public class Arithmetic {
         }
     }
 
-    // Variable expression - e.g. x, y, z
+    // Variable - e.g. x or y
     class Variable extends ArithmeticExpression {
         private String name;
 
@@ -85,7 +75,7 @@ public class Arithmetic {
         }
     }
 
-    // Constant expression - e.g. 1, 2, 3
+    // Constant value - e.g. 5 or 7
     class Constant extends ArithmeticExpression {
         private double value;
 
@@ -95,7 +85,7 @@ public class Arithmetic {
 
         @Override
         public StringBuilder prettyPrint() {
-            return new StringBuilder(String.valueOf(value));
+            return new StringBuilder(Double.toString(value)); //String.valueOf -> Double.toString the difference is that Double.toString will print "NaN" and "Infinity" for Double.NaN and Double.POSITIVE_INFINITY respectively, while String.valueOf will print "null" and "Infinity".
         }
 
         public ArithmeticExpression simplify() {
@@ -107,8 +97,26 @@ public class Arithmetic {
         }
     }
 
-    // Addition of two expressions, uses the ExpressionFactory to create new
-    // expressions
+    class CoefficientVariable extends ArithmeticExpression {
+        private double coefficient;
+        private Variable variable;
+
+        public CoefficientVariable(double coefficient, Variable variable) {
+            this.coefficient = coefficient;
+            this.variable = variable;
+        }
+
+        @Override
+        public StringBuilder prettyPrint() {
+            return new StringBuilder().append(coefficient).append(variable.prettyPrint());
+        }
+
+        public ArithmeticExpression simplify() {
+            return this;
+        }
+    }
+
+    // Addition of two expressions - e.g. x + y or 5 + 7
     class Addition extends ArithmeticExpression {
         private ArithmeticExpression left, right;
 
@@ -204,15 +212,21 @@ public class Arithmetic {
                 return new Constant(resultValue);
             }
 
-            // If one operand is a Constant and the other is a Variable, e.g. 3*2x
-            if (simplifiedLeft instanceof Constant && simplifiedRight instanceof Variable) {
-                double coefficient = ((Constant) simplifiedLeft).getValue();
-                return new Multiplication(new Constant(coefficient), simplifiedRight);
+            // If one operand is a Constant and the other is a Variable, e.g. x*5.0 or 5.0*x
+            if (simplifiedLeft instanceof Variable && simplifiedRight instanceof Constant) {
+                double coefficient = ((Constant) simplifiedRight).getValue();
+                if (coefficient == 1.0) {
+                    return simplifiedLeft; // Return just the variable if coefficient is 1
+                }
+                return new CoefficientVariable(coefficient, (Variable) simplifiedLeft);
             }
 
-            if (simplifiedRight instanceof Constant && simplifiedLeft instanceof Variable) {
-                double coefficient = ((Constant) simplifiedRight).getValue();
-                return new Multiplication(simplifiedLeft, new Constant(coefficient));
+            if (simplifiedRight instanceof Variable && simplifiedLeft instanceof Constant) {
+                double coefficient = ((Constant) simplifiedLeft).getValue();
+                if (coefficient == 1.0) {
+                    return simplifiedRight; // Return just the variable if coefficient is 1
+                }
+                return new CoefficientVariable(coefficient, (Variable) simplifiedRight);
             }
 
             // Return multiplication if no further simplification is possible
@@ -262,11 +276,10 @@ public class Arithmetic {
                                                                              // possible
         }
     }
-
+    
     // Extension Example 2
     // This is more complex than division
     // Exponetatiation of two expressions - e.g. x ^ y
-
     class Exponentiation extends ArithmeticExpression {
         private ArithmeticExpression base, exponent;
 
@@ -286,7 +299,7 @@ public class Arithmetic {
             ArithmeticExpression simplifiedBase = base.simplify();
             ArithmeticExpression simplifiedExponent = exponent.simplify();
 
-            // Base is 1 or Exponent is 0
+            // If the base is 1, return 1.
             if (simplifiedBase instanceof Constant && ((Constant) simplifiedBase).getValue() == 1.0) {
                 return new Constant(1.0);
             }
@@ -294,7 +307,7 @@ public class Arithmetic {
                 return new Constant(1.0);
             }
 
-            // Base is 0
+            // If the exponent is 0, return 1.
             if (simplifiedBase instanceof Constant && ((Constant) simplifiedBase).getValue() == 0.0) {
                 if (simplifiedExponent instanceof Constant && ((Constant) simplifiedExponent).getValue() > 0) {
                     return new Constant(0.0);
@@ -303,12 +316,12 @@ public class Arithmetic {
                 }
             }
 
-            // Exponent is 1
+            // When the exponent is 1, return the base.
             if (simplifiedExponent instanceof Constant && ((Constant) simplifiedExponent).getValue() == 1.0) {
                 return simplifiedBase;
             }
 
-            // Return exponentiation if no further simplification is possible
+            // Return exponentiation if no simplification is possible
             return new Exponentiation(simplifiedBase, simplifiedExponent);
         }
 
@@ -318,7 +331,7 @@ public class Arithmetic {
         Arithmetic arithmeticInstance = new Arithmetic();
         MinimalExpressionFactory factory = arithmeticInstance.new MinimalExpressionFactory();
 
-        double[] numbers = { 0.0, 1.0, 5.0, 10.0 };
+        double[] numbers = { 0, 1, 2, 3, 4, 5 };
         String[] variables = { "x", "y", "z" };
 
         // Testing variable with number
@@ -347,10 +360,22 @@ public class Arithmetic {
                 testExpressions(factory, constant1, constant2);
             }
         }
+
+        ArithmeticExpression x = factory.createVariable("x");
+        ArithmeticExpression y = factory.createVariable("y");
+        testExpressions(factory, factory.createAddition(factory.createMultiplication(factory.createConstant(7), x), factory.createMultiplication(factory.createConstant(9), y)));
+        testExpressions(factory, factory.createAddition(factory.createMultiplication(factory.createConstant(4), x), x));
+        testExpressions(factory, factory.createMultiplication(x, x));
+        testExpressions(factory, factory.createMultiplication(factory.createConstant(8), factory.createConstant(3)));
+        testExpressions(factory, factory.createMultiplication(factory.createMultiplication(factory.createConstant(7), x), factory.createMultiplication(factory.createConstant(9), x)));
     }
 
-    public static void testExpressions(MinimalExpressionFactory factory, ArithmeticExpression expr1,
-            ArithmeticExpression expr2) {
+    public static void testExpressions(MinimalExpressionFactory factory, ArithmeticExpression expr) {
+        System.out.println(expr.prettyPrint() + " => Simplified: " + expr.simplify().prettyPrint());
+        System.out.println("////");
+    }
+
+    public static void testExpressions(MinimalExpressionFactory factory, ArithmeticExpression expr1, ArithmeticExpression expr2) {
         // Test Addition
         ArithmeticExpression addition = factory.createAddition(expr1, expr2);
         System.out.println(
